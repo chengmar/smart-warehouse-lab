@@ -41,6 +41,10 @@ try{
   await click('查看轨迹',shipment);await click('确认签收',drawer);await closed();
   await click('查看轨迹',shipment);await drawer.getByText('收件人已签收').waitFor();await capture('04-tracking');await click('关闭',drawer);
   await click('流水与核对');await click('运行核对');await page.getByText('库存和事件核对通过').waitFor();await capture('05-audit');
+  await click('冷链监测');await click('上报温度');await drawer.getByLabel('COLD-01 采样值（℃）').fill('9.1');
+  await click('提交采样',drawer);await closed();await page.getByText('冷藏区温度异常 9.1℃').waitFor();await capture('07-cold');
+  await click('确认处理');await page.getByText('已处理',{exact:true}).waitFor();
+  await click('事件中心');await page.getByRole('heading',{name:'事件队列'}).waitFor();await capture('08-events');
   const lot=await db.tx(tx=>tx.one("SELECT on_hand,reserved FROM lots WHERE batch='E2E-COFFEE'"));assert.equal(lot.on_hand,7);assert.equal(lot.reserved,0);
   const final=await db.tx(tx=>tx.one("SELECT status FROM orders WHERE customer='端到端验收门店'"));assert.equal(final.status,'DELIVERED');
   await page.setViewportSize({width:390,height:844});await click('调度总览');await page.getByRole('heading',{name:'调度总览'}).waitFor();await capture('06-mobile');

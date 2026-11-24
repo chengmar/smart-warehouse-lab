@@ -26,7 +26,7 @@ function login(){
 }
 async function load(){
   const version=++generation;const fresh=await api('state');if(version!==generation||!user)return;
-  state=fresh;render();
+  state=fresh;render();if(page==='inventory')await queryInventory();
 }
 function go(next){location.hash=next;if(page===next){search='';filter='';render();}}
 function nav(){return Object.entries(pages).map(([k,[title,i]])=>`<button class="nav-link ${k===page?'active':''}" data-page="${k}" ${k===page?'aria-current="page"':''}>${icon(i)}${title}</button>`).join('');}
@@ -58,7 +58,7 @@ function filters(choices,placeholder){return `<div class="filters"><input id="se
 function inventoryRows(){
   return state.lots.filter(l=>(!filter||l.location_id.startsWith(filter))&&[l.batch,l.location_id,l.product_id,p(l.product_id).name].some(v=>v.toLowerCase().includes(search.toLowerCase())));
 }
-function inventoryTable(){return table(['商品 / 编号','货位','批次 / 效期','在库','预留','可用','效期',...(admin()?['操作']:[])],inventoryRows().map(l=>[`${esc(p(l.product_id).name)}<small>${l.product_id}</small>`,l.location_id,`${esc(l.batch)}<small>${l.expiry}</small>`,l.on_hand,l.reserved,l.on_hand-l.reserved,days(l.expiry)<=0?badge('DEAD','已到期'):days(l.expiry)<=30?badge('RETRY','临期'):badge('DONE','正常'),...(admin()?[btn('盘点','count',{id:l.id,cls:'quiet'})]:[])]));}
+function inventoryTable(rows=inventoryRows().slice(0,50)){return table(['商品 / 编号','货位','批次 / 效期','在库','预留','可用','效期',...(admin()?['操作']:[])],rows.map(l=>[`${esc(p(l.product_id).name)}<small>${l.product_id}</small>`,l.location_id,`${esc(l.batch)}<small>${l.expiry}</small>`,l.on_hand,l.reserved,l.on_hand-l.reserved,days(l.expiry)<=0?badge('DEAD','已到期'):days(l.expiry)<=30?badge('RETRY','临期'):badge('DONE','正常'),...(admin()?[btn('盘点','count',{id:l.id,cls:'quiet'})]:[])]));}
 function orderTable(){return table(['订单 / 客户','目的地','件数','优先级','状态','操作'],state.orders.filter(o=>(!filter||filter===o.status)&&[o.customer,o.destination,o.id].join(' ').toLowerCase().includes(search.toLowerCase())).map(o=>[`${short(o.id)}<small>${esc(o.customer)}</small>`,esc(o.destination),state.lines.filter(l=>l.order_id===o.id).reduce((n,l)=>n+l.qty,0),o.priority==='HIGH'?badge('RETRY','加急'):'普通',badge(o.status),btn('查看订单','detail',{id:o.id,cls:'quiet'})]));}
 function logistics(){
   const waiting=state.orders.filter(o=>o.status==='SHIPPED'&&!state.shipments.some(s=>s.order_id===o.id));
@@ -71,7 +71,12 @@ function cold(){
 }
 function audit(){
   const summary=report?`<div class="cardbody"><b>${report.ok?'库存和事件核对通过':'发现差异'}</b><p>${report.lots} 个批次 · ${report.events} 条事件 · ${report.differences.length} 项库存差异 · ${report.broken.length} 条异常事件</p>${report.ok?'':`<pre>${esc(JSON.stringify(report,null,2))}</pre>`}</div>`:'<p class="cardbody muted">运行核对后可查看库存流水、有效预留与事件摘要是否一致。</p>';
-  return card('一致性结果',summary)+card('库存流水',table(['业务 / 时间','商品 / 批次','在库变动','预留变动','操作人','原因'],state.moves.map(m=>[`${esc(labels[m.kind]||m.kind)}<small>${fmt(m.created_at)}</small>`,`${esc(p(lot(m.lot_id).product_id).name)}<small>${esc(lot(m.lot_id).batch)}</small>`,m.delta_hand,m.delta_reserved,esc(m.operator),esc(m.reason)])));
+  return card('一致性结果',summary)+card('库存流水',filters(['RECEIVE','RESERVE','SHIP','COUNT','RELEASE'].map(k=>[k,labels[k]]),'批次、订单号或操作人')+`<div id="results">${moveTable()}</div>`);
+}
+function moveTable(){
+  const moves=state.moves.filter(m=>(!filter||m.kind===filter)&&[lot(m.lot_id).batch,m.order_id||'',m.operator].join(' ').toLowerCase().includes(search.toLowerCase()));
+  return table(['业务 / 时间','商品 / 批次','关联订单','在库变动','预留变动','操作人','原因'],moves.map(m=>[
+    `${esc(labels[m.kind]||m.kind)}<small>${fmt(m.created_at)}</small>`,`${esc(p(lot(m.lot_id).product_id).name)}<small>${esc(lot(m.lot_id).batch)}</small>`,short(m.order_id),m.delta_hand,m.delta_reserved,esc(m.operator),esc(m.reason)]));
 }
 function events(){return card('事件队列',table(['序号','事件 / 对象','状态','尝试','时间','操作'],state.events.map(e=>[e.seq,`${esc(e.type)}<small>${short(e.aggregate_id)}</small>`,badge(e.status),e.attempts,fmt(e.created_at),btn('详情','event',{id:e.id,cls:'quiet'})+(admin()&&e.status==='DEAD'?btn('重放','replay',{id:e.id}):'')])),admin()?`<div class="actions">${btn(state.paused?'继续消费':'暂停消费','worker')}${btn('消费一批','dispatch')}${btn('模拟故障','fault',{cls:'danger'})}</div>`:`<small>${state.paused?'已暂停':'自动消费中'}</small>`);}
 function view(){
@@ -85,7 +90,7 @@ function modal(title,html){
 }
 const options=rows=>rows.map(([v,t])=>`<option value="${esc(v)}">${esc(t)}</option>`).join('');
 const field=(label,name,type='text',extra='')=>`<label class="field"><span>${label}</span><input name="${name}" type="${type}" required ${extra}></label>`;
-const select=(label,name,list)=>`<label class="field"><span>${label}</span><select name="${name}" required>${options(list)}</select></label>`;
+const select=(label,name,list)=>`<label class="field"><span>${label}</span><select name="${name}" aria-label="${esc(label)}" required>${options(list)}</select></label>`;
 const form=(kind,fields,submit,id='')=>`<form data-kind="${kind}" data-id="${esc(id)}">${fields}<p role="alert" class="error"></p><div class="form-foot">${btn('返回','close')}<button class="btn primary" type="submit">${submit}</button></div></form>`;
 const products=()=>state.products.map(x=>[x.id,x.name+' · '+x.id]);
 function line(){return `<div class="line"><select name="product_id" aria-label="订单商品">${options(products())}</select><input name="qty" aria-label="订购数量" type="number" step="1" min="1" max="100000" value="1" required>${btn('移除','remove',{cls:'quiet'})}</div>`;}
@@ -108,6 +113,7 @@ async function action(el){
   const {act,id}=el.dataset;
   if(act==='close')return dialog.close();
   if(act==='logout'){await api('logout',{});generation++;user=null;state=null;report=null;login();return;}
+  if(act==='prev'||act==='next'){inventoryOffset=Math.max(0,inventoryOffset+(act==='prev'?-50:50));return queryInventory();}
   if(act==='refresh')return load();
   if(act==='go-orders')return go('orders');
   if(act==='export')return exportCsv();
@@ -116,7 +122,7 @@ async function action(el){
     return modal(id+' 货位',`<p>${loc.cold?'冷藏区':'常温区'} · 容量 ${loc.capacity} 件</p>`+table(['商品','批次','在库','可用'],state.lots.filter(l=>l.location_id===id).map(l=>[esc(p(l.product_id).name),esc(l.batch),l.on_hand,l.on_hand-l.reserved])));
   }
   if(act==='receive')return modal('登记入库',form('receive',`<div class="fields">${select('商品','product_id',products())}${select('货位','location_id',state.locations.map(x=>[x.id,x.id+(x.cold?' · 冷藏':' · 常温')]))}${field('到货批号','batch','text','maxlength="64"')}${field('有效期','expiry','date')}${field('到货数量','quantity','number','min="1" max="100000" step="1"')}${field('供应商','supplier','text','maxlength="128"')}</div>`,'确认入库'));
-  if(act==='count'){const l=lot(id);return modal('库存盘点',form('count',`<p class="info">${esc(p(l.product_id).name)} · ${esc(l.batch)} · ${l.location_id}<br>账面 ${l.on_hand}，已预留 ${l.reserved}，版本 ${l.version}</p><input name="version" type="hidden" value="${l.version}">${field('实盘数量','counted','number',`min="0" max="100000" value="${l.on_hand}"`)}${field('调整原因','reason','text','maxlength="256"')}`,'提交盘点',id));}
+  if(act==='count'){const l=visibleLots.find(item=>item.id===id)||lot(id);return modal('库存盘点',form('count',`<p class="info">${esc(p(l.product_id).name)} · ${esc(l.batch)} · ${l.location_id}<br>账面 ${l.on_hand}，已预留 ${l.reserved}，版本 ${l.version}</p><input name="version" type="hidden" value="${l.version}">${field('实盘数量','counted','number',`min="0" max="100000" value="${l.on_hand}"`)}${field('调整原因','reason','text','maxlength="256"')}`,'提交盘点',id));}
   if(act==='new-order')return modal('创建出库订单',form('order',field('客户','customer')+field('目的地','destination')+select('优先级','priority',[['NORMAL','普通'],['HIGH','加急']])+`<div><b>商品明细</b><div id="lines">${line()}</div>${btn('添加商品','add',{icon:'plus'})}</div>`,'创建订单'));
   if(act==='add'){const list=dialog.querySelector('#lines');if(list.children.length<20)list.insertAdjacentHTML('beforeend',line());return;}
   if(act==='remove'){if(el.parentElement.parentElement.children.length>1)el.parentElement.remove();return;}
@@ -162,10 +168,22 @@ document.addEventListener('submit',async e=>{
     await api(endpoint,body,el.dataset.key);dialog.close();await load();toast('已保存');
   }catch(error){errorBox.textContent=error.message;}finally{if(button)button.disabled=false;}
 });
-function updateFilter(){document.querySelector('#results').innerHTML=page==='inventory'?inventoryTable():orderTable();}
+let inventoryOffset=0,inventoryRequest=0,visibleLots=[];
+async function queryInventory(){
+  const ticket=++inventoryRequest,params=new URLSearchParams({q:search,zone:filter,offset:String(inventoryOffset),limit:'50'});
+  try{
+    const result=await api('inventory?'+params);
+    if(ticket!==inventoryRequest||page!=='inventory'||!user)return;
+    visibleLots=result.rows;
+    const target=document.querySelector('#results');if(!target)return;
+    const nav=`<div class="form-foot">${inventoryOffset?btn('上一页','prev'):''}${result.more?btn('下一页','next'):''}</div>`;
+    target.innerHTML=inventoryTable(visibleLots)+(result.more||inventoryOffset?nav:'');
+  }catch(e){if(page==='inventory')toast(e.message);}
+}
+function updateFilter(){if(page==='inventory'){inventoryOffset=0;return queryInventory();}document.querySelector('#results').innerHTML=page==='audit'?moveTable():orderTable();}
 document.addEventListener('input',e=>{if(e.target.id==='search'){search=e.target.value;updateFilter();}});
 document.addEventListener('change',e=>{if(e.target.id==='filter'){filter=e.target.value;updateFilter();}});
-function syncPage(){page=Object.hasOwn(pages,location.hash.slice(1))?location.hash.slice(1):'overview';search='';filter='';if(dialog.open)dialog.close();if(state&&user)render();}
+function syncPage(){page=Object.hasOwn(pages,location.hash.slice(1))?location.hash.slice(1):'overview';search='';filter='';if(dialog.open)dialog.close();inventoryOffset=0;if(state&&user){render();if(page==='inventory')queryInventory();}}
 window.addEventListener('hashchange',syncPage);
 syncPage();
 try{user=await api('me');await load();}catch{login();}

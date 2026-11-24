@@ -80,3 +80,8 @@ test('F04 入库、建单、出库、回传和签收全流程',async()=>{
   assert.equal((await get('SELECT on_hand FROM lots WHERE id=?',[arrival.lot_id])).on_hand,1);assert.equal((await request('reconcile',{cookie})).data.ok,true);
 });
 test('F05 幂等键缺失、错误文本、对象不存在',async()=>{assert.equal((await request('receipts',{body:receipt(),cookie:adminCookie,key:'a'})).status,400);assert.equal((await request('orders',{cookie:adminCookie,body:{...order(),customer:' '}})).status,400);assert.equal((await request('orders/absent/route',{cookie:viewerCookie})).status,404);});
+test('F06 库存查询按区、批号和页码筛选',async()=>{
+  const l=await arrive(receipt({batch:'PAGE_%'}));const r=await request('inventory?zone=A&q=PAGE_%25&limit=1',{cookie:viewerCookie});
+  assert.equal(r.status,200);assert.equal(r.data.rows[0].id,l.lot_id);assert.equal(r.data.more,false);
+  assert.equal((await request('inventory?limit=9999',{cookie:viewerCookie})).status,400);
+});

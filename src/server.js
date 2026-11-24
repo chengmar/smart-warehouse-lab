@@ -52,6 +52,17 @@ export async function createApp(db,{worker=true,password=process.env.DEMO_PASSWO
       const snapshot={driver:db.driver,today:day(),paused};for(const [key,sql] of Object.entries(queries))snapshot[key]=await tx.rows(sql);return snapshot;
     });res.json(state);
   });
+  app.get('/api/inventory',async(req,res)=>{
+    const limit=Number(req.query.limit||50),offset=Number(req.query.offset||0);
+    check(Number.isSafeInteger(limit)&&limit>0&&limit<=200&&Number.isSafeInteger(offset)&&offset>=0,'分页参数无效');
+    const q=String(req.query.q||'').slice(0,128);
+    const pattern='%'+q.replace(/[!%_]/g,ch=>'!'+ch)+'%';
+    const zone=String(req.query.zone||'');check(['','A','B','C'].includes(zone),'库区无效');
+    const rows=await db.tx(tx=>tx.rows(`SELECT l.*,p.name,p.unit FROM lots l JOIN products p ON p.id=l.product_id JOIN locations s ON s.id=l.location_id
+      WHERE (?='' OR s.zone=?) AND (?='' OR p.name LIKE ? ESCAPE '!' OR l.batch LIKE ? ESCAPE '!' OR l.location_id LIKE ? ESCAPE '!' OR l.product_id LIKE ? ESCAPE '!')
+      ORDER BY l.expiry,l.batch,l.location_id,l.id LIMIT ${limit+1} OFFSET ${offset}`,[zone,zone,q,pattern,pattern,pattern,pattern]));
+    res.json({rows:rows.slice(0,limit),more:rows.length>limit,limit,offset});
+  });
   app.get('/api/reconcile',async(req,res)=>res.json(await db.tx(verify)));
   app.get('/api/orders/:id/route',async(req,res)=>res.json(await db.tx(async tx=>{
     check(await tx.one('SELECT id FROM orders WHERE id=?',[req.params.id]),'订单不存在',404);

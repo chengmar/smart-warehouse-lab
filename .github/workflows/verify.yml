@@ -35,3 +35,16 @@ jobs:
         with: {node-version: 24}
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+      - name: 启动独立的 Compose 部署并检查数据库读写
+        run: |
+          docker compose up --build --detach --wait
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:3210/api/health | jq -e '.driver == "mysql"'; then break; fi
+            sleep 2
+          done
+          curl --fail --silent http://localhost:3210/api/health | jq -e '.driver == "mysql"'
+          curl --fail --silent -c /tmp/warehouse-cookie -H 'Content-Type: application/json' -d '{"username":"admin","password":"Warehouse2026!"}' http://localhost:3210/api/login | jq -e '.role == "ADMIN"'
+          curl --fail --silent -b /tmp/warehouse-cookie -H 'Content-Type: application/json' -H 'Idempotency-Key: compose-smoke-receipt' -d '{"product_id":"P01","location_id":"A-04","batch":"COMPOSE","quantity":3,"expiry":"2099-01-01","supplier":"部署验收"}' http://localhost:3210/api/receipts | jq -e '.qty == 3'
+          curl --fail --silent -b /tmp/warehouse-cookie http://localhost:3210/api/reconcile | jq -e '.ok == true'
+      - if: failure()
+        run: docker compose logs --tail=80
