@@ -1,0 +1,13 @@
+{
+  "tested_at": "2026-11-24T11:07:41.085Z",
+  "browser": "157.0.8103.79",
+  "driver": "sqlite",
+  "receipt": 11,
+  "shipped": 4,
+  "stock": 7,
+  "reserved": 0,
+  "order": "DELIVERED",
+  "shipment_visible_ms": 1373,
+  "mobile": "390×844",
+  "errors": []
+}
