@@ -1,0 +1,14 @@
+name: 仓库所有者审核
+on:
+  push:
+    branches-ignore: [main]
+permissions: {}
+concurrency:
+  group: owner-review-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  approval:
+    runs-on: ubuntu-latest
+    environment: owner-review
+    steps:
+      - run: echo "Owner review recorded for this revision."
