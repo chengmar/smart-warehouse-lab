@@ -1,0 +1,23 @@
+{
+  "at": "2026-11-24T03:48:11.601Z",
+  "driver": "SQLite in-memory",
+  "node": "v24.22.3",
+  "os": "win32",
+  "cpu": "Intel(R) Core(TM) i9-14900HX",
+  "ram_gib": 32,
+  "initial_lots": 10000,
+  "initial_orders": 10000,
+  "sessions": 50,
+  "read": {
+    "requests": 200,
+    "errors": 0,
+    "p95_ms": 210,
+    "max_ms": 211
+  },
+  "write": {
+    "requests": 200,
+    "errors": 0,
+    "p95_ms": 32,
+    "max_ms": 34
+  }
+}

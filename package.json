@@ -1,0 +1,22 @@
+{
+  "name": "smart-warehouse-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "mysql2": "^3.15.3",
+    "lucide": "npm:lucide-static@^0.468.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}
